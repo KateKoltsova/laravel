@@ -2,16 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Status;
+use App\Models\Task;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
 {
-    public array $task = [
-        'Write' => 'qwertyuiopasdfghjklzxcvbnm',
-        'Read' => 'mnbvcxzlkjhgfdsapoiuytrewq',
-        'Listen' => 'zxcvbnmasdfghjklqwertyuiop'
-    ];
-
     /**
      * Display a listing of the resource.
      *
@@ -19,22 +17,8 @@ class TaskController extends Controller
      */
     public function index()
     {
-        $result = "TaskController index display a listing of the tasks:";
-        $result .= '<ul>';
-        foreach ($this->task as $task => $description) {
-            $result .= '<li>' . $task . '</li>
-                                <button>
-                                    <a href="' . route('task.show', ['task' => $task])
-                                    . '" style="text-decoration: none; color: black">
-                                    Show this Task</a>
-                                </button>';
-        }
-        $result .= '</ul>
-                    <button>
-                        <a href="' . route('task.create')
-                        . '" style="text-decoration: none; color: black">Create new Task</a>
-                    </button>';
-        return $result;
+        $tasks = Task::query()->get();
+        return view('tasks.index', ['tasks' => $tasks]);
     }
 
     /**
@@ -44,9 +28,10 @@ class TaskController extends Controller
      */
     public function create()
     {
-        echo "<h1>Form for creating a new task</h1>";
-        return view('task-form');
-
+        $users = User::query()->get();
+        $statuses = Status::query()->get();
+        $usersId = User::query()->get('id');
+        return view('tasks.create', ['users' => $users, 'statuses' => $statuses]);
     }
 
     /**
@@ -57,9 +42,29 @@ class TaskController extends Controller
      */
     public function store(Request $request)
     {
-        $this->task[$request->input('task')] = $request->input('description');
-        echo 'New Task "' . $request->input('task') . '" written to TaskController store! <br>';
-        echo '<button><a href="' . route('task.index') . '" style="text-decoration: none; color: black">Show Task list</a></button>';
+        $users = User::get();
+        foreach($users as $user) {
+            $usersId[] = $user->id;
+        }
+        $statuses = Status::get();
+        foreach($statuses as $status) {
+            $statusesId[] = $status->id;
+        }
+        $validated = $request->validate([
+            'creator_id' => ['required', Rule::in($usersId), 'integer'],
+            'title' => ['required', 'min:5', 'max:50'],
+            'content' => ['required', 'min:10', 'max:250'],
+            'status_id' => ['required', Rule::in($statusesId), 'integer'],
+        ]);
+        Task::query()->insert([
+            'creator_id' => $validated['creator_id'],
+            'title' => $validated['title'],
+            'content' => $validated['content'],
+            'status_id' => $validated['status_id'],
+            'created_at' => now(),
+        ]);
+        $task = Task::query()->latest()->first();
+        return view('tasks.store', ['task' => $task]);
     }
 
     /**
@@ -70,20 +75,8 @@ class TaskController extends Controller
      */
     public function show($id)
     {
-        $show = "TaskController show <h3>Task $id</h3>";
-        $show .= 'Description:<br>';
-        $show .= $this->task[$id];
-        $show .='<br><button>
-                            <a href="' . route('task.edit', ['task' => $id])
-                            . '" style="text-decoration: none; color: black">Edit this Task</a>
-                         </button>';
-        $show .= '<br><form method="post" action="' . route('task.destroy', ['task' => $id]) . '">
-                            <input type="hidden" name="_method" value="DELETE">'
-                            . csrf_field()
-                            . '<button>Delete this Task
-                            </button>
-                         </form>';
-        return $show;
+        $task = Task::query()->where('id', $id)->with(['user', 'status'])->first();
+        return view('tasks.show', ['task' => $task]);
     }
 
     /**
@@ -94,21 +87,10 @@ class TaskController extends Controller
      */
     public function edit($id)
     {
-        return '<form action="' . route('task.update', ['task' => $id]) . '" method="post">
-                <input type="hidden" name="_method" value="PUT">'
-                . csrf_field()
-                . 'Task
-                <br>
-                <input type="text" name="task" value="' . $id . '">
-                <br>
-                <br>
-                Description
-                <br>
-                <textarea name="description">' . $this->task[$id] . '</textarea>
-                <br>
-                <br>
-                <button type="submit">Update</button>
-            </form>';
+        $users = User::query()->get();
+        $statuses = Status::query()->get();
+        $task = Task::query()->where('id', $id)->first();
+        return view('tasks.edit', ['users' => $users, 'statuses' => $statuses, 'task' => $task]);
     }
 
     /**
@@ -120,22 +102,30 @@ class TaskController extends Controller
      */
     public function update(Request $request, $id)
     {
-        if ($request->input('task') !== $id) {
-            unset($this->task[$id]);
-            $updateMessage = 'TaskController update task "' . $id
-                . '" to task: <br>' . $request->input('task')
-                . '<br>with description: <br>' . $request->input('description');
-        } elseif ($request->input('description') !== $this->task[$id]) {
-            $updateMessage = 'TaskController update description task "' . $id
-                . '"<br>from:<br>"' . $this->task[$id]
-                . '"<br>to:<br>"' . $request->input('description') . '"';
-        } else {
-            $updateMessage = "TaskController don`t update task $id";
+        $users = User::get();
+        foreach($users as $user) {
+            $usersId[] = $user->id;
         }
-
-        $this->task[$request->input('task')] = $request->input('decsription');
-
-        return $updateMessage;
+        $statuses = Status::get();
+        foreach($statuses as $status) {
+            $statusesId[] = $status->id;
+        }
+        $validated = $request->validate([
+            'creator_id' => ['required', Rule::in($usersId), 'integer'],
+            'title' => ['required', 'min:5', 'max:50'],
+            'content' => ['required', 'min:10', 'max:250'],
+            'status_id' => ['required', Rule::in($statusesId), 'integer'],
+        ]);
+        $oldTask = Task::query()->where('id', $id)->with(['user', 'status'])->first();
+        Task::query()->where('id', $id)->update([
+            'creator_id' => $validated['creator_id'],
+            'title' => $validated['title'],
+            'content' => $validated['content'],
+            'status_id' => $validated['status_id'],
+            'updated_at' => now(),
+        ]);
+        $task = Task::query()->where('id', $id)->with(['user', 'status'])->first();
+        return view('tasks.update', ['task' => $task, 'oldTask' => $oldTask]);
     }
 
     /**
@@ -144,8 +134,11 @@ class TaskController extends Controller
      * @param int $id
      * @return \Illuminate\Http\Response
      */
-    public function destroy($id)
+    public
+    function destroy($id)
     {
-        return 'TaskController destroy task "' . $id . '"!';
+        $task = Task::query()->where('id', $id)->first();
+        Task::query()->where('id', $id)->delete();
+        return view('tasks.view', ['task' => $task]);
     }
 }
